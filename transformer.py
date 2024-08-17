@@ -80,17 +80,6 @@ class SharedMemoryType(OpalType):
         return TYPE_TO_REG["u32"]  # Pointer type
 
 
-class KernelScope:
-    def __init__(self, kernel_builder):
-        self.kernel_builder = kernel_builder
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, a, b, c):
-        self.kernel_builder.end_block()
-
-
 class KernelBlock:
     def __init__(self, name):
         self.instructions = []
@@ -106,10 +95,28 @@ class KernelBlock:
         print(self.generate())
 
 
+class KernelScope:
+    def __init__(self, kernel_builder, block_name):
+        self.kernel_builder = kernel_builder
+        self.block_name = block_name
+
+    def __enter__(self):
+        self.kernel_builder.blocks.append(KernelBlock(self.block_name))
+        self.kernel_builder.block_stack.append(self.kernel_builder.blocks[-1])
+
+    def __exit__(self, a, b, c):
+        self.kernel_builder.block_stack.pop()
+
+    def __repr__(self):
+        return self.block_name
+
+
 class KernelBuilder:
     def __init__(self):
+        self.block_name_counter = 1
         self.blocks = [KernelBlock("entry")]
         self.block_stack = [self.blocks[0]]
+
         self.variables = {}
         self.shared_memory_entries = []
         self.tmp_count = 0
@@ -120,28 +127,10 @@ class KernelBuilder:
         self.name = name
         self.args = args
 
-    def If(self, cond_predicate):
-        # TODO: How will we handle else?
-        if_out = f"block_{len(self.blocks) + 1}"
-        self.block_stack[-1].instructions.append(f"@!{cond_predicate} bra ${if_out};")
-
-        self.blocks.append(KernelBlock(f"block_{len(self.blocks)}_if"))
-        self.block_stack.append(self.blocks[-1])
-
-        return KernelScope(self)
-
-    def While(self, cond_predicate):
-        while_out = f"block_{len(self.blocks)}"
-
-        self.blocks.append(KernelBlock(f"block_{len(self.blocks)}_while"))
-        self.block_stack.append(self.blocks[-1])
-
-        return KernelScope(self)
-
-    def end_block(self):
-        self.block_stack = self.block_stack[:-2]
-        self.blocks.append(KernelBlock(f"block_{len(self.blocks)}"))
-        self.block_stack.append(self.blocks[-1])
+    def Block(self, prefix=""):
+        result = KernelScope(self, f"{prefix}_block_{self.block_name_counter}")
+        self.block_name_counter += 1
+        return result
 
     def _allocate_name(self, name):
         if name not in self.variables:
@@ -301,10 +290,37 @@ class OpalExpressionAnalyser:
 class OpalTransformer(ast.NodeTransformer):
     def __init__(self, is_fragment=False):
         self.opal_variables = {}
+        self.block_counter = 1
         self.analyser = OpalExpressionAnalyser()
         self.body_stack = []
         self.tmp_python_variables = 0
         self.is_fragment = is_fragment
+
+    def push_body_continuation(self, node, attr):
+        self.push_expr(node)
+        self.body_stack[-1] = getattr(node, attr)
+
+    def push_expr(self, node):
+        self.body_stack[-1].append(node)
+
+    def _new_block(self, prefix="") -> str:
+        name = f"block_{self.block_counter}"
+        self.block_counter += 1
+
+        exp = ast.Assign(
+            targets=[ast.Name(id=name, ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="kernel_builder", ctx=ast.Load()),
+                    attr="Block",
+                    ctx=ast.Load(),
+                ),
+                args=[ast.Constant(value=prefix)],
+                keywords=[],
+            ),
+        )
+        self.push_expr(exp)
+        return name
 
     def _new_tmp_variable(self, typ: OpalType):
         assert isinstance(typ, BasicType)
@@ -327,7 +343,7 @@ class OpalTransformer(ast.NodeTransformer):
             value=self._new_tmp_variable(typ),
         )
         self.tmp_python_variables += 1
-        self.body_stack[-1].append(exp)
+        self.push_expr(exp)
 
         return name
 
@@ -400,7 +416,7 @@ class OpalTransformer(ast.NodeTransformer):
             args=[instruction_str],
             keywords=[],
         )
-        self.body_stack[-1].append(ast.Expr(value=exp))
+        self.push_expr(ast.Expr(value=exp))
 
     def ptx_cast(self, from_type: OpalType, to_type: OpalType, arg) -> (str, BasicType):
         to_reg_type = to_type.get_reg_type()
@@ -484,7 +500,7 @@ class OpalTransformer(ast.NodeTransformer):
             "Sub": "sub",
             "Mult": "mul.lo",
             "Div": "div",
-            # TODO: Add FloorDiv, Mod
+            # TODO: Add Mod
         }
 
         inst = op_to_inst[op]
@@ -564,6 +580,7 @@ class OpalTransformer(ast.NodeTransformer):
             # UAdd is no op.
             return self.visit_ptxExpression(node.operand)
 
+        raise NotImplementedError
         # TODO: Implement other ops.
 
     def visit_ptxConstant(self, node: ast.Constant) -> (str, OpalType):
@@ -648,7 +665,7 @@ class OpalTransformer(ast.NodeTransformer):
         result_typ = BasicType(typ.type_name)
         result_name = self._new_tmp_variable_statement(result_typ)
 
-        self.body_stack[-1].append(
+        self.push_expr(
             ast.Assign(targets=[ast.Name(id=result_name, ctx=ast.Store())], value=node)
         )
 
@@ -772,14 +789,18 @@ class OpalTransformer(ast.NodeTransformer):
         return ast.With(items=[ast.withitem(context_expr=exp)], body=node.body)
 
     def _visit_body(self, node, body_attr):
+        """
+        Visit/Replace nodes of a body while allowing insertion of expressions.
+        """
+        new_body = []
+        self.body_stack.append(new_body)
         body = getattr(node, body_attr)
-        self.body_stack.append([])
         for i, cnode in enumerate(body):
             replace = self.visit(cnode)
             if replace is not None:
-                self.body_stack[-1].append(replace)
-        setattr(node, body_attr, self.body_stack[-1])
-        self.body_stack = self.body_stack[:-1]
+                new_body.append(replace)
+        setattr(node, body_attr, new_body)
+        self.body_stack.pop()
 
     def visit_If(self, node):
         if not self.analyser.is_opal_expression(node.test, self.opal_variables):
@@ -790,17 +811,63 @@ class OpalTransformer(ast.NodeTransformer):
         cond, typ = self.visit_ptxExpression(node.test)
         cond, typ = self.ptx_cast(typ, BasicType("pred"), cond)
 
-        exp = ast.Call(
-            func=ast.Attribute(
-                value=ast.Name(id="kernel_builder", ctx=ast.Load()),
-                attr="If",
-                ctx=ast.Load(),
-            ),
-            args=[ast.Name(id=cond, ctx=ast.Load())],
-            keywords=[],
+        if_block = self._new_block("if_cond")
+        cond_not = self._new_block("not_cond")
+        if_done = self._new_block("if_done") if len(node.orelse) > 0 else None
+        self._insert_ptx_instruction(
+            [
+                "@!",
+                ast.Name(id=cond, ctx=ast.Load()),
+                " bra $",
+                ast.Name(id=cond_not, ctx=ast.Load()),
+            ]
         )
+
         self._visit_body(node, "body")
-        return ast.With(items=[ast.withitem(context_expr=exp)], body=node.body)
+
+        if_postfix = []
+
+        if len(node.orelse) > 0:
+            self.body_stack.append(if_postfix)
+            self._insert_ptx_instruction(
+                ["bra $", ast.Name(id=if_done, ctx=ast.Load())]
+            )
+            self.body_stack.pop()
+
+        self.push_expr(
+            ast.With(
+                items=[
+                    ast.withitem(context_expr=ast.Name(id=if_block, ctx=ast.Load()))
+                ],
+                body=node.body + if_postfix,
+            )
+        )
+        if len(node.orelse) > 0:
+            self._visit_body(node, "orelse")
+            self.push_expr(
+                ast.With(
+                    items=[
+                        ast.withitem(context_expr=ast.Name(id=cond_not, ctx=ast.Load()))
+                    ],
+                    body=node.orelse,
+                )
+            )
+
+        self.push_body_continuation(
+            ast.With(
+                items=[
+                    ast.withitem(
+                        context_expr=ast.Name(
+                            id=cond_not if len(node.orelse) == 0 else if_done,
+                            ctx=ast.Load(),
+                        )
+                    )
+                ],
+                body=[],
+            ),
+            "body",
+        )
+        self.push_expr(ast.Pass())
 
     def visit_Assign(self, node):
         if len(node.targets) != 1:
@@ -855,7 +922,8 @@ class OpalTransformer(ast.NodeTransformer):
             targets=[node.target], value=self._new_variable(name, typ)
         )
 
-        self.body_stack[-1].append(assignment_expression)
+        self.push_expr(assignment_expression)
+
         if not node.value:
             return
 
@@ -945,7 +1013,7 @@ class OpalTransformer(ast.NodeTransformer):
                         ctx=ast.Load(),
                     )
                 )
-            self.body_stack[-1].append(
+            self.push_expr(
                 ast.Expr(
                     value=ast.Call(
                         func=ast.Attribute(
