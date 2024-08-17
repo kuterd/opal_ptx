@@ -771,22 +771,82 @@ class OpalTransformer(ast.NodeTransformer):
             self._visit_body(node, "orelse")
             return node
 
+        loop_header = self._new_block("loop_header")
+        loop_body = self._new_block("loop_body")
+        loop_exit = self._new_block("loop_exit")
+
+        loop_header_body = []
+        self.body_stack.append(loop_header_body)
+
         cond, typ = self.visit_ptxExpression(node.test)
         cond, typ = self.ptx_cast(typ, BasicType("pred"), cond)
 
-        # TODO: Handle the condition
-        exp = ast.Call(
-            func=ast.Attribute(
-                value=ast.Name(id="kernel_builder", ctx=ast.Load()),
-                attr="While",
-                ctx=ast.Load(),
+        self._insert_ptx_instruction(
+            [
+                "@!",
+                ast.Name(id=cond, ctx=ast.Load()),
+                " bra $",
+                ast.Name(id=loop_exit, ctx=ast.Load()),
+            ]
+        )
+        self.body_stack.pop()
+
+        self.push_expr(
+            ast.With(
+                items=[
+                    ast.withitem(
+                        context_expr=ast.Name(
+                            id=loop_header,
+                            ctx=ast.Load(),
+                        )
+                    )
+                ],
+                body=loop_header_body,
             ),
-            args=[ast.Name(id=cond, ctx=ast.Load())],
-            keywords=[],
         )
 
         self._visit_body(node, "body")
-        return ast.With(items=[ast.withitem(context_expr=exp)], body=node.body)
+
+        loop_body_postfix = []
+        self.body_stack.append(loop_body_postfix)
+
+        self._insert_ptx_instruction(
+            [
+                "bra $",
+                ast.Name(id=loop_header, ctx=ast.Load()),
+            ]
+        )
+        self.body_stack.pop()
+
+        self.push_expr(
+            ast.With(
+                items=[
+                    ast.withitem(
+                        context_expr=ast.Name(
+                            id=loop_body,
+                            ctx=ast.Load(),
+                        )
+                    )
+                ],
+                body=node.body + loop_body_postfix,
+            ),
+        )
+
+        self.push_body_continuation(
+            ast.With(
+                items=[
+                    ast.withitem(
+                        context_expr=ast.Name(
+                            id=loop_exit,
+                            ctx=ast.Load(),
+                        )
+                    )
+                ],
+                body=[],
+            ),
+            "body",
+        )
+        self.push_expr(ast.Pass())
 
     def _visit_body(self, node, body_attr):
         """
