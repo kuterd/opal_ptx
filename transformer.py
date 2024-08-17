@@ -41,7 +41,7 @@ class OpalType:
     def get_reg_type(self):
         raise NotImplementedError()
 
-    def get_fundumental_type(self):
+    def get_fundamental_type(self):
         return self.get_reg_type()
 
 
@@ -500,14 +500,22 @@ class OpalTransformer(ast.NodeTransformer):
             "Sub": "sub",
             "Mult": "mul.lo",
             "Div": "div",
+            "RShift": "shr",
+            "LShift": "shl",
             # TODO: Add Mod
         }
 
         inst = op_to_inst[op]
 
+        target_type = op_type.get_fundamental_type()
+        if inst == "shr" or inst == "shl":
+            right = self.ptx_cast(right[1], BasicType("u32"), right[0])
+        if inst == "shl":
+            target_type = TYPE_TO_REG[target_type]
+
         self._insert_ptx_instruction(
             [
-                f"{inst}.{op_type.get_fundamental_type()} ",
+                f"{inst}.{target_type} ",
                 ast.Name(id=target, ctx=ast.Load()),
                 ",",
                 ast.Name(id=left[0], ctx=ast.Load()),
@@ -940,9 +948,14 @@ class OpalTransformer(ast.NodeTransformer):
             return node
 
         value, val_typ = self.visit_ptxExpression(node.value)
+        target_type = self.opal_variables[name].get_fundamental_type()
+
+        if val_typ.get_fundamental_type() != target_type:
+            value, val_typ = self.ptx_cast(val_typ, self.opal_variables[name], value)
+
         self._insert_ptx_instruction(
             [
-                f"mov.{self.opal_variables[name].get_fundamental_type()} ",
+                f"mov.{target_type} ",
                 ast.Name(id=name, ctx=ast.Load()),
                 ", ",
                 ast.Name(id=value, ctx=ast.Load()),
