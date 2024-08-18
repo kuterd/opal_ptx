@@ -620,7 +620,6 @@ class OpalTransformer(ast.NodeTransformer):
         right = self.visit_ptxExpression(node.comparators[0])
 
         left, right = self._binary_cast(left, right)
-        print(left[1].type_name, right[1].type_name)
         result_name = self._new_tmp_variable_statement(BasicType("b32"))
 
         op = type(node.ops[0]).__name__
@@ -965,7 +964,7 @@ class OpalTransformer(ast.NodeTransformer):
     def visit_AugAssign(self, node):
         if (
             not isinstance(node.target, ast.Name)
-            or node.target.id not in self.pal_variables
+            or node.target.id not in self.opal_variables
         ):
             return self.generic_visit(node)
 
@@ -1001,7 +1000,7 @@ class OpalTransformer(ast.NodeTransformer):
             return
 
         value, val_typ = self.visit_ptxExpression(node.value)
-        print(value, typ, val_typ)
+        #print(value, typ, val_typ)
         value, typ = self.ptx_cast(val_typ, typ, value)
         self._insert_ptx_instruction(
             [
@@ -1128,7 +1127,7 @@ def kernel():
         visitor = OpalTransformer()
         function = visitor.visit(function)
         function = ast.fix_missing_locations(function)
-        print("Unparsed\n", ast.unparse(function))
+        #print("Unparsed\n", ast.unparse(function))
         transformed_code = compile(function, filename="<ast>", mode="exec")
         local_namespace = {}
         exec(transformed_code, func.__globals__, local_namespace)
