@@ -1,10 +1,13 @@
 import transformer as kernel_transformer
-import pycuda.driver as cuda
-import pycuda.autoinit
-import pycuda.compiler as compiler
-import pycuda.gpuarray as gpuarray
-import numpy as np
+from torch.utils.cpp_extension import load
+import torch
 
+trampoline = load(
+    "extension",
+    sources=["trampoline.cu"],
+    extra_ldflags=["-lnvrtc", "-lcuda"],
+    extra_cuda_cflags=["-g"],
+)
 
 @kernel_transformer.kernel()
 def test(buffer: "u64", size: "s64"):
@@ -20,32 +23,16 @@ def test(buffer: "u64", size: "s64"):
 
 kernel_builder = kernel_transformer.KernelBuilder()
 test(kernel_builder)
-kernel_code = kernel_builder.generate("sm_90")
+kernel_code = kernel_builder.generate("sm_75")
 
 kernel_file = open("test.ptx", "w")
 kernel_file.write(kernel_code)
 kernel_file.close()
 
+result = torch.zeros(32, dtype=torch.uint64, device="cuda")
 
-cuda.init()
-device = cuda.Device(0)
-context = device.make_context()
+wrapper = trampoline.CuModuleWrapper()
+wrapper.load_ptx_code(kernel_code)
 
-try:
-    module = cuda.module_from_buffer(kernel_code.encode())
-    kernel_function = module.get_function("test")
-    sample_count = 32 * 2
-    data_gpu = gpuarray.zeros(sample_count, dtype=np.uint64)
-
-    kernel_function(
-        data_gpu, np.uint64(sample_count), block=(sample_count, 1, 1), grid=(1, 1, 1)
-    )
-
-    cuda.Context.synchronize()
-
-    print(data_gpu)
-
-finally:
-    # Clean up and reset CUDA context
-    context.pop()
-    context.detach()
+wrapper.launch_kernel("test", (1, 1, 1), (32, 1, 1), (result.data_ptr(), 32))
+print(result)
