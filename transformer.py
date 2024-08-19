@@ -1,9 +1,3 @@
-"""
-
-TODO:
-    * BoolOps
-"""
-
 import ast
 import inspect
 from enum import Enum
@@ -502,6 +496,9 @@ class OpalTransformer(ast.NodeTransformer):
             "Div": "div",
             "RShift": "shr",
             "LShift": "shl",
+            "BitAnd": "and",
+            "BitXor": "xor",
+            "BitOr": "or",
             # TODO: Add Mod
         }
 
@@ -510,7 +507,7 @@ class OpalTransformer(ast.NodeTransformer):
         target_type = op_type.get_fundamental_type()
         if inst == "shr" or inst == "shl":
             right = self.ptx_cast(right[1], BasicType("u32"), right[0])
-        if inst == "shl":
+        if inst in ["shl", "xor", "and", "or"]:
             target_type = TYPE_TO_REG[target_type]
 
         self._insert_ptx_instruction(
@@ -1000,7 +997,7 @@ class OpalTransformer(ast.NodeTransformer):
             return
 
         value, val_typ = self.visit_ptxExpression(node.value)
-        #print(value, typ, val_typ)
+        # print(value, typ, val_typ)
         value, typ = self.ptx_cast(val_typ, typ, value)
         self._insert_ptx_instruction(
             [
@@ -1127,7 +1124,7 @@ def kernel():
         visitor = OpalTransformer()
         function = visitor.visit(function)
         function = ast.fix_missing_locations(function)
-        #print("Unparsed\n", ast.unparse(function))
+        # print("Unparsed\n", ast.unparse(function))
         transformed_code = compile(function, filename="<ast>", mode="exec")
         local_namespace = {}
         exec(transformed_code, func.__globals__, local_namespace)
