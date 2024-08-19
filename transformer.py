@@ -871,6 +871,7 @@ class OpalTransformer(ast.NodeTransformer):
 
         self._visit_body(node, "body")
 
+        # this is most likely broken in one way.
         loop_body_postfix = []
         self.body_stack.append(loop_body_postfix)
 
@@ -882,6 +883,11 @@ class OpalTransformer(ast.NodeTransformer):
         )
         self.body_stack.pop()
 
+        if isinstance(node.body[-1], ast.With):
+            node.body[-1].body += loop_body_postfix
+        else:
+            node.body += loop_body_postfix
+
         self.push_expr(
             ast.With(
                 items=[
@@ -892,7 +898,7 @@ class OpalTransformer(ast.NodeTransformer):
                         )
                     )
                 ],
-                body=node.body + loop_body_postfix,
+                body=node.body,
             ),
         )
 
@@ -958,12 +964,17 @@ class OpalTransformer(ast.NodeTransformer):
             )
             self.body_stack.pop()
 
+        if isinstance(node.body[-1], ast.With):
+            node.body[-1].body += if_postfix
+        else:
+            node.body += if_postfix
+
         self.push_expr(
             ast.With(
                 items=[
                     ast.withitem(context_expr=ast.Name(id=if_block, ctx=ast.Load()))
                 ],
-                body=node.body + if_postfix,
+                body=node.body,
             )
         )
         if len(node.orelse) > 0:
