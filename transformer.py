@@ -429,6 +429,9 @@ class OpalTransformer(ast.NodeTransformer):
         self.push_expr(ast.Expr(value=exp))
 
     def ptx_cast(self, from_type: OpalType, to_type: OpalType, arg) -> (str, BasicType):
+        if from_type.get_fundamental_type() == to_type.get_fundamental_type():
+            return arg, to_type
+        
         to_reg_type = to_type.get_reg_type()
         if isinstance(from_type, SharedMemoryType) and to_reg_type != "b32":
             arg, from_type = self.ptx_cast(from_type, BasicType("u32"), arg)
