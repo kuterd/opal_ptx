@@ -1,5 +1,6 @@
 import ast
 import inspect
+import struct
 from enum import Enum
 
 
@@ -29,6 +30,19 @@ TYPE_TO_REG = {
     "f8": "f8",
     "pred": "pred",
 }
+
+
+def double_to_hex(d):
+    # Pack the double into a byte array (IEEE 754 double-precision format)
+    byte_array = struct.pack(">d", d)
+
+    # Convert the byte array to an integer
+    int_value = int.from_bytes(byte_array, byteorder="big")
+
+    # Convert the integer to a hexadecimal string
+    hex_string = format(int_value, "016x")
+
+    return hex_string
 
 
 class OpalType:
@@ -471,11 +485,19 @@ class OpalTransformer(ast.NodeTransformer):
             to_type.get_fundamental_type() in float_types
             and from_type.get_fundamental_type() in float_types
         ):
+            float_types = ["f64", "f32", "f16", "f8"]
+
+            rounding = ""
+            if float_types.index(to_type.get_fundamental_type()) > float_types.index(
+                from_type.get_fundamental_type()
+            ):
+                rounding = ".rn"
+
             # Float to float conversion
             result_name = self._new_tmp_variable_statement(to_type)
             self._insert_ptx_instruction(
                 [
-                    f"cvt.{to_type.get_fundamental_type()}.{from_type.get_fundamental_type()} ",
+                    f"cvt.{to_type.get_fundamental_type()}.{from_type.get_fundamental_type()}{rounding} ",
                     ast.Name(id=result_name, ctx=ast.Load()),
                     ", ",
                     ast.Name(id=arg, ctx=ast.Load()),
@@ -593,6 +615,7 @@ class OpalTransformer(ast.NodeTransformer):
         typ = None
 
         if isinstance(val, float):
+            val = "0d" + double_to_hex(val)
             typ = BasicType("f64")
         elif isinstance(val, int):
             typ = BasicType("s64")
