@@ -30,16 +30,39 @@ public:
     }
 
     void load_ptx_code(const std::string &ptx_code) {
-        CUresult res = cuModuleLoadDataEx(&cuModule, ptx_code.c_str(), 0, nullptr, nullptr);
+        // Define log buffers and their sizes
+    
+        const size_t buffer_size = 32768;
+        char info_log_buffer[buffer_size];
+        
+        char error_log_buffer[buffer_size];
+        
+        CUmodule module;
+        CUjit_option options[4];
+        void *option_values[4];
+    
+        // Set up options for info log buffer size and buffer
+        options[0] = CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES;
+        option_values[0] = (void*)buffer_size;
+    
+        options[1] = CU_JIT_INFO_LOG_BUFFER;
+        option_values[1] = (void*)info_log_buffer;
+    
+        // Set up options for error log buffer size and buffer
+        options[2] = CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES;
+        option_values[2] = (void*)buffer_size;
+    
+        options[3] = CU_JIT_ERROR_LOG_BUFFER;
+        option_values[3] = (void*)error_log_buffer;
+
+        CUresult res = cuModuleLoadDataEx(&cuModule, ptx_code.c_str(), 4, options, option_values);
         if (res != CUDA_SUCCESS) {
             const char *errStr;
             cuGetErrorName(res, &errStr);
 
             std::string errorMessage = "Failed to load PTX code! Error: ";
             errorMessage += errStr ? errStr : "Unknown error";
-
-            // Optionally include additional details
-            errorMessage += ". PTX Code Size: " + std::to_string(ptx_code.size()) + " bytes.";
+            errorMessage += "\nError: " + std::string(error_log_buffer) + " Info: " + std::string(info_log_buffer);
 
             throw std::runtime_error(errorMessage);
         }
