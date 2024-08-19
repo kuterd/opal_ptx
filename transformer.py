@@ -1114,9 +1114,16 @@ class OpalTransformer(ast.NodeTransformer):
         if not self.is_fragment:
             kernel_arguments_st = []
 
+            meta_arguments = []
             for arg in node.args.args:
                 name = arg.arg
-                typ = self.resolve_type(arg.annotation)
+
+                typ = None
+                if arg.annotation:
+                    typ = self.resolve_type(arg.annotation)
+                if not typ:
+                    meta_arguments.append(arg)
+                    continue
 
                 self.opal_variables[name] = typ
 
@@ -1171,7 +1178,7 @@ class OpalTransformer(ast.NodeTransformer):
             ast.arg(
                 arg="kernel_builder", lineno=node.lineno, col_offset=node.col_offset
             ),
-        ]
+        ] + meta_arguments
 
         return node
 
@@ -1186,7 +1193,8 @@ def kernel():
         visitor = OpalTransformer()
         function = visitor.visit(function)
         function = ast.fix_missing_locations(function)
-        # print("Unparsed\n", ast.unparse(function))
+
+        print("Unparsed\n", ast.unparse(function))
         transformed_code = compile(function, filename="<ast>", mode="exec")
         local_namespace = {}
         exec(transformed_code, func.__globals__, local_namespace)
