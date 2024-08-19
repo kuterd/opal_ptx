@@ -17,6 +17,8 @@ class BasicTypes(str, Enum):
     f8 = "f8"
 
 
+float_types = ["f64", "f32", "f16", "f8"]
+
 TYPE_TO_REG = {
     "b32": "b32",
     "b64": "b64",
@@ -432,8 +434,6 @@ class OpalTransformer(ast.NodeTransformer):
             arg, from_type = self.ptx_cast(from_type, BasicType("u32"), arg)
         from_reg_type = from_type.get_reg_type()
 
-        float_types = {"f64", "f32", "f16", "f8"}
-
         if to_reg_type == "b64" and from_reg_type == "b32":
             result_name = self._new_tmp_variable_statement(to_type)
             self._insert_ptx_instruction(
@@ -483,9 +483,31 @@ class OpalTransformer(ast.NodeTransformer):
             return result_name, to_type
         elif (
             to_type.get_fundamental_type() in float_types
+            and from_type.get_fundamental_type() not in float_types
+        ):
+            # non-float to float conversion.
+            # FIXME: Test
+
+            rounding = ".rn"
+
+            # Float to float conversion
+            result_name = self._new_tmp_variable_statement(to_type)
+            self._insert_ptx_instruction(
+                [
+                    f"cvt.{to_type.get_fundamental_type()}.{from_type.get_fundamental_type()}{rounding} ",
+                    ast.Name(id=result_name, ctx=ast.Load()),
+                    ", ",
+                    ast.Name(id=arg, ctx=ast.Load()),
+                ]
+            )
+
+            return result_name, to_type
+
+        elif (
+            to_type.get_fundamental_type() in float_types
             and from_type.get_fundamental_type() in float_types
         ):
-            float_types = ["f64", "f32", "f16", "f8"]
+            # Float to float conversion.
 
             rounding = ""
             if float_types.index(to_type.get_fundamental_type()) > float_types.index(
@@ -514,7 +536,7 @@ class OpalTransformer(ast.NodeTransformer):
         op_to_inst = {
             "Add": "add",
             "Sub": "sub",
-            "Mult": "mul.lo",
+            "Mult": "mul",
             "Div": "div",
             "RShift": "shr",
             "LShift": "shl",
@@ -527,6 +549,10 @@ class OpalTransformer(ast.NodeTransformer):
         inst = op_to_inst[op]
 
         target_type = op_type.get_fundamental_type()
+        if inst == "mul" and target_type in ["u32", "s32", "u64", "s64"]:
+            inst += ".lo"
+        if inst == "div" and target_type in float_types:
+            inst += ".rn"
         if inst == "shr" or inst == "shl":
             right = self.ptx_cast(right[1], BasicType("u32"), right[0])
         if inst in ["shl", "xor", "and", "or"]:
@@ -603,9 +629,20 @@ class OpalTransformer(ast.NodeTransformer):
     def visit_ptxUnaryOp(self, node: ast.UnaryOp) -> (str, OpalType):
         op = type(node.op).__name__
 
+        s = self.visit_ptxExpression(node.operand)
         if op == "UAdd":
-            # UAdd is no op.
-            return self.visit_ptxExpression(node.operand)
+            return s
+        elif op == "USub":
+            result_name = self._new_tmp_variable_statement(s[1])
+            self._insert_ptx_instruction(
+                [
+                    f"neg.{s[1].get_fundamental_type()} ",
+                    ast.Name(id=result_name, ctx=ast.Load()),
+                    ",",
+                    ast.Name(id=s[0], ctx=ast.Load()),
+                ]
+            )
+            return result_name, s[1]
 
         raise NotImplementedError
         # TODO: Implement other ops.
@@ -661,7 +698,7 @@ class OpalTransformer(ast.NodeTransformer):
                 ast.Name(id=right[0], ctx=ast.Load()),
             ]
         )
-        return result_name, BasicType("b32")
+        return result_name, BasicType("u32")
 
     def visit_ptxVariableReference(self, node: ast.Call):
         assert len(node.args) == 1
@@ -885,7 +922,7 @@ class OpalTransformer(ast.NodeTransformer):
         for i, cnode in enumerate(body):
             replace = self.visit(cnode)
             if replace is not None:
-                new_body.append(replace)
+                self.body_stack[-1].append(replace)
         setattr(node, body_attr, new_body)
         self.body_stack.pop()
 
@@ -991,6 +1028,8 @@ class OpalTransformer(ast.NodeTransformer):
         op = type(node.op).__name__
         op_type = self.opal_variables[node.target.id]
         right = self.visit_ptxExpression(node.value)
+        right = self.ptx_cast(right[1], op_type, right[0])
+
         self._ptx_binop(
             op,
             op_type,
