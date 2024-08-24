@@ -1232,7 +1232,6 @@ class OpalTransformer(ast.NodeTransformer):
                     typ = self.resolve_type(arg.annotation)
 
                 if typ:
-                    print(name, typ)
                     self.opal_variables[name] = typ
 
             node.args.args = [
