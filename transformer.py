@@ -1213,18 +1213,33 @@ class OpalTransformer(ast.NodeTransformer):
                     )
                 )
             )
+            node.args.args = [
+                ast.arg(
+                    arg="kernel_builder", lineno=node.lineno, col_offset=node.col_offset
+                ),
+            ] + meta_arguments
+        else:
+            for arg in node.args.args:
+                name = arg.arg
+                typ = None
+                if arg.annotation:
+                    typ = self.resolve_type(arg.annotation)
+
+                if typ:
+                    print(name, typ)
+                    self.opal_variables[name] = typ
+
+            node.args.args = [
+                ast.arg(
+                    arg="kernel_builder", lineno=node.lineno, col_offset=node.col_offset
+                ),
+            ] + node.args.args
 
         arg_setup = self.body_stack[-1]
         self.body_stack = self.body_stack[:-1]
         self._visit_body(node, "body")
 
         node.body = arg_setup + node.body
-
-        node.args.args = [
-            ast.arg(
-                arg="kernel_builder", lineno=node.lineno, col_offset=node.col_offset
-            ),
-        ] + meta_arguments
 
         return node
 
