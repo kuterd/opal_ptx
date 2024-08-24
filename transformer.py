@@ -303,6 +303,8 @@ class OpalTransformer(ast.NodeTransformer):
         self.block_counter = 1
         self.analyser = OpalExpressionAnalyser()
         self.body_stack = []
+
+        self.loop_stack = []  # (loop_header, loop_exit) or None
         self.tmp_python_variables = 0
         self.is_fragment = is_fragment
 
@@ -827,14 +829,18 @@ class OpalTransformer(ast.NodeTransformer):
         return None
 
     def visit_For(self, node):
+        self.loop_stack.append(None)
         # TODO: Opal For loops
         self._visit_body(node, "body")
+        self.loop_stack.pop()
         self._visit_body(node, "orelse")
         return node
 
     def visit_While(self, node):
         if not self.analyser.is_opal_expression(node.test, self.opal_variables):
+            self.loop_stack.append(None)
             self._visit_body(node, "body")
+            self.loop_stack.pop()
             self._visit_body(node, "orelse")
             return node
 
@@ -872,7 +878,9 @@ class OpalTransformer(ast.NodeTransformer):
             ),
         )
 
+        self.loop_stack.append((loop_header, loop_exit))
         self._visit_body(node, "body")
+        self.loop_stack.pop()
 
         # this is most likely broken in one way.
         loop_body_postfix = []
@@ -920,6 +928,30 @@ class OpalTransformer(ast.NodeTransformer):
             "body",
         )
         self.push_expr(ast.Pass())
+
+    def visit_Break(self, node):
+        if self.loop_stack[-1] is None:
+            # Python loop
+            return node
+        loop_header, loop_exit = self.loop_stack[-1]
+        self._insert_ptx_instruction(
+            [
+                "bra $",
+                ast.Name(id=loop_exit, ctx=ast.Load()),
+            ]
+        )
+
+    def visit_Continue(self, node):
+        if self.loop_stack[-1] is None:
+            # Python loop
+            return node
+        loop_header, loop_exit = self.loop_stack[-1]
+        self._insert_ptx_instruction(
+            [
+                "bra $",
+                ast.Name(id=loop_header, ctx=ast.Load()),
+            ]
+        )
 
     def _visit_body(self, node, body_attr):
         """
