@@ -116,6 +116,8 @@ class KernelScope:
 
     def __exit__(self, a, b, c):
         self.kernel_builder.block_stack.pop()
+        self.kernel_builder.blocks.append(KernelBlock(f"{self.block_name}_after"))
+        self.kernel_builder.block_stack.append(self.kernel_builder.blocks[-1])
 
     def __repr__(self):
         return self.block_name
@@ -827,6 +829,10 @@ class OpalTransformer(ast.NodeTransformer):
                 # Array addressing thing
         self._insert_ptx_instruction(instruction_parts)
         return None
+
+    def visit_With(self, node):
+        self._visit_body(node, "body")
+        return node
 
     def visit_For(self, node):
         self.loop_stack.append(None)
