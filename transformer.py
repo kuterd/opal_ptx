@@ -299,6 +299,9 @@ class OpalExpressionAnalyser:
         return self.is_opal_expression(node.value)
 
     def _Call(self, node):
+        if isinstance(node.func, ast.Name):
+            return node.func.id in TYPE_TO_REG
+
         # ptx ... name () expressions
         def _root(node):
             if isinstance(node, ast.Name):
