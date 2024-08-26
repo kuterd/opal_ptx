@@ -3,6 +3,17 @@ import inspect
 import struct
 from enum import Enum
 
+def get_sm_version(device_index=0):
+    import torch
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available. Make sure you have a compatible GPU and CUDA installed.")
+    
+    properties = torch.cuda.get_device_properties(device_index)
+    
+    major, minor = properties.major, properties.minor
+    
+    sm_version = f"sm_{major}{minor}"
+    return sm_version
 
 class BasicTypes(str, Enum):
     u64 = "u64"
@@ -187,7 +198,10 @@ class KernelBuilder:
     def append_instruction(self, inst):
         self.block_stack[-1].instructions.append(inst + ";")
 
-    def generate(self, target, version="8.5"):
+    def generate(self, target=None, version="8.5"):
+        if not target:
+            target = get_sm_version()
+        
         result = f"""
         .version {version}
         .target {target}
