@@ -3,17 +3,22 @@ import inspect
 import struct
 from enum import Enum
 
+
 def get_sm_version(device_index=0):
     import torch
+
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available. Make sure you have a compatible GPU and CUDA installed.")
-    
+        raise RuntimeError(
+            "CUDA is not available. Make sure you have a compatible GPU and CUDA installed."
+        )
+
     properties = torch.cuda.get_device_properties(device_index)
-    
+
     major, minor = properties.major, properties.minor
-    
+
     sm_version = f"sm_{major}{minor}"
     return sm_version
+
 
 class BasicTypes(str, Enum):
     u64 = "u64"
@@ -201,7 +206,7 @@ class KernelBuilder:
     def generate(self, target=None, version="8.5"):
         if not target:
             target = get_sm_version()
-        
+
         result = f"""
         .version {version}
         .target {target}
@@ -635,20 +640,9 @@ class OpalTransformer(ast.NodeTransformer):
         return self._ptx_binop(op, left[1], result_name, left, right)
 
     def visit_ptxBoolOp(self, node: ast.BoolOp) -> (str, OpalType):
-        # TODO: What should be the type of the result?
-        def _handle_binary(op, result: str, right: (str, OpalType)):
-            pass
-
-        op = type(node.op).__name__
-        left = self.visit_ptxExpression(node.values[0])
-        result = self._new_tmp_variable_statement(left[1])
-        # TODO: move left to the result.
-
-        for val in node.values[1:]:
-            ptx_val = self.visit_ptxExpression(val)
-            _handle_binary(node.op, result, ptx_val)
-
-        # return
+        raise NotImplementedError(
+            "Bool operations are not implemented for now, use bitwise operators like &, |, ^ instead."
+        )
 
     def visit_ptxUnaryOp(self, node: ast.UnaryOp) -> (str, OpalType):
         op = type(node.op).__name__
@@ -905,7 +899,6 @@ class OpalTransformer(ast.NodeTransformer):
         self._visit_body(node, "body")
         self.loop_stack.pop()
 
-        # this is most likely broken in one way.
         loop_body_postfix = []
         self.body_stack.append(loop_body_postfix)
 
