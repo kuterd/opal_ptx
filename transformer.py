@@ -33,6 +33,7 @@ class BasicTypes(str, Enum):
     f8 = "f8"
 
 
+int_types = {"u64", "s64", "u32", "s32", "b64", "b32"}
 float_types = ["f64", "f32", "f16", "f8"]
 
 TYPE_TO_REG = {
@@ -476,6 +477,7 @@ class OpalTransformer(ast.NodeTransformer):
             )
             return result_name, to_type
         elif to_reg_type == "b32" and from_reg_type == "b32":
+            # NOTE: not 100% sure why we have this, sign conersion?
             result_name = self._new_tmp_variable_statement(to_type)
             self._insert_ptx_instruction(
                 [
@@ -498,7 +500,7 @@ class OpalTransformer(ast.NodeTransformer):
             )
             return result_name, to_type
 
-        elif to_reg_type == "pred":
+        elif to_reg_type == "pred" and from_reg_type in int_types:
             result_name = self._new_tmp_variable_statement(to_type)
             self._insert_ptx_instruction(
                 [
@@ -515,9 +517,28 @@ class OpalTransformer(ast.NodeTransformer):
             and from_type.get_fundamental_type() not in float_types
         ):
             # non-float to float conversion.
-            # FIXME: Test
 
             rounding = ".rn"
+
+            # Float to float conversion
+            result_name = self._new_tmp_variable_statement(to_type)
+            self._insert_ptx_instruction(
+                [
+                    f"cvt.{to_type.get_fundamental_type()}.{from_type.get_fundamental_type()}{rounding} ",
+                    ast.Name(id=result_name, ctx=ast.Load()),
+                    ", ",
+                    ast.Name(id=arg, ctx=ast.Load()),
+                ]
+            )
+
+            return result_name, to_type
+        elif (
+            from_type.get_fundamental_type() in float_types
+            and to_type.get_fundamental_type() in int_types
+        ):
+            # NOTE: Should we merge different cvt cases?
+            # Float to int cast.
+            rounding = ".rzi"
 
             # Float to float conversion
             result_name = self._new_tmp_variable_statement(to_type)
@@ -558,6 +579,7 @@ class OpalTransformer(ast.NodeTransformer):
             return result_name, to_type
 
         else:
+            # TODO: Should we have an excpetion here instead?
             return arg, to_type
 
     def _ptx_binop(self, op: str, op_type: OpalType, target: str, left, right):
