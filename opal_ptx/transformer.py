@@ -73,7 +73,7 @@ class OpalType:
 
 
 class BasicType(OpalType):
-    def __init__(self, type_name):
+    def __init__(self, type_name: str):
         self.type_name = type_name
 
     def get_fundamental_type(self):
@@ -84,7 +84,7 @@ class BasicType(OpalType):
 
 
 class RegisterVector(OpalType):
-    def __init__(self, type_name, length):
+    def __init__(self, type_name: str, length):
         self.length = length
         self.type_name = type_name
 
@@ -96,7 +96,7 @@ class RegisterVector(OpalType):
 
 
 class SharedMemoryType(OpalType):
-    def __init__(self, type_name, length):
+    def __init__(self, type_name: str, length):
         self.type_name = type_name
         self.length = length
 
@@ -384,7 +384,7 @@ class OpalTransformer(ast.NodeTransformer):
 
         return name
 
-    def _new_register_vector(self, name: str, typ_name: str, length: int):
+    def _new_register_vector(self, name: str, typ_name: str, length):
         return ast.Call(
             func=ast.Attribute(
                 value=ast.Name(id="kernel_builder", ctx=ast.Load()),
@@ -394,7 +394,7 @@ class OpalTransformer(ast.NodeTransformer):
             args=[
                 ast.Constant(value=name),
                 ast.Constant(value=typ_name),
-                ast.Constant(value=length),
+                length,
             ],
             keywords=[],
         )
@@ -409,7 +409,7 @@ class OpalTransformer(ast.NodeTransformer):
             args=[
                 ast.Constant(value=name),
                 ast.Constant(value=typ.type_name),
-                ast.Constant(value=typ.length),
+                typ.length,
             ],
             keywords=[],
         )
@@ -1171,9 +1171,8 @@ class OpalTransformer(ast.NodeTransformer):
                 # shared memory decleration.
                 assert len(anno.args) == 2
                 assert isinstance(anno.args[0], ast.Name)
-                assert isinstance(anno.args[1], ast.Constant)
 
-                return SharedMemoryType(anno.args[0].id, anno.args[1].value)
+                return SharedMemoryType(anno.args[0].id, anno.args[1])
 
             elif name in TYPE_TO_REG:
                 assert len(anno.args) == 1
