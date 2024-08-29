@@ -3,6 +3,8 @@ import inspect
 import struct
 from enum import Enum
 
+from ._C import CuModuleWrapper
+
 
 def get_sm_version(device_index=0):
     import torch
@@ -11,7 +13,9 @@ def get_sm_version(device_index=0):
         raise RuntimeError(
             "CUDA is not available. Make sure you have a compatible GPU and CUDA installed."
         )
-
+    # Force cuda to initialize itself.
+    # NOTE: might be a good idea to find a better place for this.
+    dummy_tensor = torch.zeros(1, device="cuda")
     properties = torch.cuda.get_device_properties(device_index)
 
     major, minor = properties.major, properties.minor
@@ -138,6 +142,31 @@ class KernelScope:
 
     def __repr__(self):
         return self.block_name
+
+
+class KernelWrapper:
+    def __init__(self, module_wrapper, kernel_name):
+        self.module_wrapper = module_wrapper
+        self.kernel_name = kernel_name
+
+    def __call__(self, grid_size, block_size, args):
+        self.module_wrapper.launch_kernel(self.kernel_name, grid_size, block_size, args)
+
+
+def build_kernel(kernel_func, *args, **kwargs):
+    ptx_version = "8.5"
+    if "ptx_version" in kwargs:
+        ptx_version = kwargs["ptx_version"]
+        del kwargs["ptx_version"]
+
+    kernel_builder = KernelBuilder()
+    kernel_func(kernel_builder, *args, **kwargs)
+    ptx_code = kernel_builder.generate(version=ptx_version)
+
+    module = CuModuleWrapper()
+    module.load_ptx_code(ptx_code)
+
+    return KernelWrapper(module, kernel_func.__name__)
 
 
 class KernelBuilder:
