@@ -611,7 +611,9 @@ class OpalTransformer(ast.NodeTransformer):
             # TODO: Should we have an excpetion here instead?
             return arg, to_type
 
-    def _ptx_binop(self, op: str, op_type: OpalType, target: str, left, right):
+    def _ptx_binop(
+        self, op: str, op_type: OpalType, target: str, left, right
+    ) -> (str, OpalType):
         # Decide type casts based on the type of left and right.
         op_to_inst = {
             "Add": "add",
@@ -623,7 +625,7 @@ class OpalTransformer(ast.NodeTransformer):
             "BitAnd": "and",
             "BitXor": "xor",
             "BitOr": "or",
-            # TODO: Add Mod
+            "Mod": "rem",
         }
 
         inst = op_to_inst[op]
