@@ -173,9 +173,16 @@ def build_kernel(kernel_func, *args, **kwargs):
         ptx_version = kwargs["ptx_version"]
         del kwargs["ptx_version"]
 
+    debug = False
+    if "debug" in kwargs:
+        print("KERNEL BUILDER DEBUG OUTPUT ENABLED")
+        debug = kwargs["debug"]
+        del kwargs["debug"]
     kernel_builder = KernelBuilder()
     kernel_func(kernel_builder, *args, **kwargs)
     ptx_code = kernel_builder.generate(version=ptx_version)
+    if debug:
+        print(ptx_code)
 
     module = CuModuleWrapper()
     module.load_ptx_code(ptx_code)
