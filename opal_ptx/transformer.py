@@ -1207,9 +1207,8 @@ class OpalTransformer(ast.NodeTransformer):
 
             elif name in TYPE_TO_REG:
                 assert len(anno.args) == 1
-                assert isinstance(anno.args[0], ast.Constant)
 
-                return RegisterVector(name, anno.args[0].value)
+                return RegisterVector(name, anno.args[0])
 
         elif isinstance(anno, ast.Constant):
             return BasicType(anno.value)
