@@ -31,27 +31,27 @@ public:
 
     void load_ptx_code(const std::string &ptx_code) {
         // Define log buffers and their sizes
-    
+
         const size_t buffer_size = 32768;
         char info_log_buffer[buffer_size];
-        
+
         char error_log_buffer[buffer_size];
-        
+
         CUmodule module;
         CUjit_option options[4];
         void *option_values[4];
-    
+
         // Set up options for info log buffer size and buffer
         options[0] = CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES;
         option_values[0] = (void*)buffer_size;
-    
+
         options[1] = CU_JIT_INFO_LOG_BUFFER;
         option_values[1] = (void*)info_log_buffer;
-    
+
         // Set up options for error log buffer size and buffer
         options[2] = CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES;
         option_values[2] = (void*)buffer_size;
-    
+
         options[3] = CU_JIT_ERROR_LOG_BUFFER;
         option_values[3] = (void*)error_log_buffer;
 
@@ -71,7 +71,7 @@ public:
     void launch_kernel(const std::string &kernel_name,
                        pybind11::tuple grid_dim_tuple,
                        pybind11::tuple block_dim_tuple,
-                       pybind11::tuple kernel_params_tuple) {
+                       pybind11::tuple kernel_params_tuple, unsigned int shmemSize) {
 
         dim3 grid_dim(grid_dim_tuple[0].cast<unsigned int>(),
                       grid_dim_tuple[1].cast<unsigned int>(),

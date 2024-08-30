@@ -149,8 +149,10 @@ class KernelWrapper:
         self.module_wrapper = module_wrapper
         self.kernel_name = kernel_name
 
-    def __call__(self, grid_size, block_size, args):
-        self.module_wrapper.launch_kernel(self.kernel_name, grid_size, block_size, args)
+    def __call__(self, grid_size, block_size, args, shmem_size=0):
+        self.module_wrapper.launch_kernel(
+            self.kernel_name, grid_size, block_size, args, shmem_size
+        )
 
 
 def build_kernel(kernel_func, *args, **kwargs):
@@ -250,7 +252,7 @@ class KernelBuilder:
             if typ != "shared":
                 result += f"\t.reg .{TYPE_TO_REG[typ]} %{name};\n"
         for name, typ, length in self.shared_memory_entries:
-            result += f"\t .shared .{typ} {name}[{length}];\n"
+            result += f"\t .shared .align 128 .{typ} {name}[{length}];\n"
 
         for i, block in enumerate(self.blocks):
             result += block.generate()
