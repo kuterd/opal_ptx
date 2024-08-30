@@ -31,22 +31,34 @@ class BasicTypes(str, Enum):
     u32 = "u32"
     s32 = "s32"
 
+    u16 = "u16"
+    s16 = "s16"
+
+    u8 = "u8"
+    s8 = "u8"
+
     f64 = "f64"
     f32 = "f32"
     f16 = "f16"
     f8 = "f8"
 
 
-int_types = {"u64", "s64", "u32", "s32", "b64", "b32"}
+int_types = {"u64", "s64", "u32", "s32", "b64", "b32", "b16", "b8"}
 float_types = ["f64", "f32", "f16", "f8"]
 
 TYPE_TO_REG = {
+    "b8": "b8",
+    "b16": "b16",
     "b32": "b32",
     "b64": "b64",
     "s64": "b64",
     "u64": "b64",
     "u32": "b32",
     "s32": "b32",
+    "s16": "b16",
+    "u16": "b16",
+    "s8": "b8",
+    "u8": "b8",
     "f64": "f64",
     "f32": "f32",
     "f16": "f16",
@@ -666,7 +678,11 @@ class OpalTransformer(ast.NodeTransformer):
             "u64": 3,
             "s32": 2,
             "u32": 1,
-            "pred": 0,
+            "s16": 0,
+            "u16": -1,
+            "s8": -2,
+            "u8": -3,
+            "pred": -4,
         }
         op_type = left[1]
 
