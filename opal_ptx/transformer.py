@@ -554,11 +554,11 @@ class OpalTransformer(ast.NodeTransformer):
             result_name = self._new_tmp_variable_statement(to_type)
             self._insert_ptx_instruction(
                 [
-                    f"setp.{from_type.get_fundamental_type()}.eq ",
+                    f"setp.{from_type.get_fundamental_type()}.ne ",
                     ast.Name(id=result_name, ctx=ast.Load()),
                     ",",
                     ast.Name(id=arg, ctx=ast.Load()),
-                    ", 1",
+                    ", 0",
                 ]
             )
             return result_name, to_type
@@ -776,17 +776,30 @@ class OpalTransformer(ast.NodeTransformer):
         result_name = self._new_tmp_variable_statement(BasicType("b32"))
 
         op = type(node.ops[0]).__name__
-        op_map = {
-            "Gt": "gt",
-            "GtE": "ge",
-            "Lt": "lt",
-            "LtE": "le",
-            "Eq": "eq",
-            "NotEq": "ne",
-        }
+
+        is_unsigned = left[1].get_fundamental_type()[0] == "u"
+        if is_unsigned:
+            op_map = {
+                "Gt": "hi",
+                "GtE": "hs",
+                "Lt": "lo",
+                "LtE": "ls",
+                "Eq": "eq",
+                "NotEq": "ne",
+            }
+        else:
+            op_map = {
+                "Gt": "gt",
+                "GtE": "ge",
+                "Lt": "lt",
+                "LtE": "le",
+                "Eq": "eq",
+                "NotEq": "ne",
+            }
+
         self._insert_ptx_instruction(
             [
-                f"set.{op_map[op]}.s32.{left[1].get_fundamental_type()} ",
+                f"set.{op_map[op]}.u32.{left[1].get_fundamental_type()} ",
                 ast.Name(id=result_name, ctx=ast.Load()),
                 ", ",
                 ast.Name(id=left[0], ctx=ast.Load()),
