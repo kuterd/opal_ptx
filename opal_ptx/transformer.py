@@ -506,7 +506,10 @@ class OpalTransformer(ast.NodeTransformer):
         self.push_expr(ast.Expr(value=exp))
 
     def ptx_cast(self, from_type: OpalType, to_type: OpalType, arg) -> (str, BasicType):
-        if from_type.get_fundamental_type() == to_type.get_fundamental_type():
+        from_fundamental = from_type.get_fundamental_type()
+        to_fundamental = to_type.get_fundamental_type()
+
+        if from_fundamental == to_fundamental:
             return arg, to_type
 
         to_reg_type = to_type.get_reg_type()
@@ -514,47 +517,11 @@ class OpalTransformer(ast.NodeTransformer):
             arg, from_type = self.ptx_cast(from_type, BasicType("u32"), arg)
         from_reg_type = from_type.get_reg_type()
 
-        if to_reg_type == "b64" and from_reg_type == "b32":
+        if to_reg_type == "pred" and from_reg_type in int_types:
             result_name = self._new_tmp_variable_statement(to_type)
             self._insert_ptx_instruction(
                 [
-                    f"mov.{to_reg_type} ",
-                    ast.Name(id=result_name, ctx=ast.Load()),
-                    ", {",
-                    ast.Name(id=arg, ctx=ast.Load()),
-                    ", 0}",
-                ]
-            )
-            return result_name, to_type
-        elif to_reg_type == "b32" and from_reg_type == "b32":
-            # NOTE: not 100% sure why we have this, sign conersion?
-            result_name = self._new_tmp_variable_statement(to_type)
-            self._insert_ptx_instruction(
-                [
-                    f"mov.{to_type.get_fundamental_type()} ",
-                    ast.Name(id=result_name, ctx=ast.Load()),
-                    ",",
-                    ast.Name(id=arg, ctx=ast.Load()),
-                ]
-            )
-            return result_name, to_type
-        elif to_reg_type == "b32" and from_reg_type == "b64":
-            result_name = self._new_tmp_variable_statement(to_type)
-            self._insert_ptx_instruction(
-                [
-                    f"cvt.{to_type.get_fundamental_type()}.{from_type.get_fundamental_type()} ",
-                    ast.Name(id=result_name, ctx=ast.Load()),
-                    ",",
-                    ast.Name(id=arg, ctx=ast.Load()),
-                ]
-            )
-            return result_name, to_type
-
-        elif to_reg_type == "pred" and from_reg_type in int_types:
-            result_name = self._new_tmp_variable_statement(to_type)
-            self._insert_ptx_instruction(
-                [
-                    f"setp.{from_type.get_fundamental_type()}.ne ",
+                    f"setp.{from_fundamental}.ne ",
                     ast.Name(id=result_name, ctx=ast.Load()),
                     ",",
                     ast.Name(id=arg, ctx=ast.Load()),
@@ -562,56 +529,19 @@ class OpalTransformer(ast.NodeTransformer):
                 ]
             )
             return result_name, to_type
-        elif (
-            to_type.get_fundamental_type() in float_types
-            and from_type.get_fundamental_type() not in float_types
-        ):
-            # non-float to float conversion.
-
-            rounding = ".rn"
-
-            # Float to float conversion
-            result_name = self._new_tmp_variable_statement(to_type)
-            self._insert_ptx_instruction(
-                [
-                    f"cvt.{to_type.get_fundamental_type()}.{from_type.get_fundamental_type()}{rounding} ",
-                    ast.Name(id=result_name, ctx=ast.Load()),
-                    ", ",
-                    ast.Name(id=arg, ctx=ast.Load()),
-                ]
-            )
-
-            return result_name, to_type
-        elif (
-            from_type.get_fundamental_type() in float_types
-            and to_type.get_fundamental_type() in int_types
-        ):
-            # NOTE: Should we merge different cvt cases?
-            # Float to int cast.
-            rounding = ".rzi"
-
-            # Float to float conversion
-            result_name = self._new_tmp_variable_statement(to_type)
-            self._insert_ptx_instruction(
-                [
-                    f"cvt.{to_type.get_fundamental_type()}.{from_type.get_fundamental_type()}{rounding} ",
-                    ast.Name(id=result_name, ctx=ast.Load()),
-                    ", ",
-                    ast.Name(id=arg, ctx=ast.Load()),
-                ]
-            )
-
-            return result_name, to_type
-
-        elif (
-            to_type.get_fundamental_type() in float_types
-            and from_type.get_fundamental_type() in float_types
-        ):
-            # Float to float conversion.
-
+        else:
             rounding = ""
-            if float_types.index(to_type.get_fundamental_type()) > float_types.index(
-                from_type.get_fundamental_type()
+            if from_fundamental in float_types and to_fundamental in int_types:
+                rounding = ".rzi"
+            elif to_fundamental in float_types and from_fundamental not in float_types:
+                rounding = ".rn"
+            elif (
+                to_fundamental in float_types
+                and from_fundamental in float_types
+                and (
+                    float_types.index(to_fundamental)
+                    > float_types.index(from_fundamental)
+                )
             ):
                 rounding = ".rn"
 
@@ -619,7 +549,7 @@ class OpalTransformer(ast.NodeTransformer):
             result_name = self._new_tmp_variable_statement(to_type)
             self._insert_ptx_instruction(
                 [
-                    f"cvt.{to_type.get_fundamental_type()}.{from_type.get_fundamental_type()}{rounding} ",
+                    f"cvt.{to_fundamental}.{from_fundamental}{rounding} ",
                     ast.Name(id=result_name, ctx=ast.Load()),
                     ", ",
                     ast.Name(id=arg, ctx=ast.Load()),
@@ -627,10 +557,6 @@ class OpalTransformer(ast.NodeTransformer):
             )
 
             return result_name, to_type
-
-        else:
-            # TODO: Should we have an excpetion here instead?
-            return arg, to_type
 
     def _ptx_binop(
         self, op: str, op_type: OpalType, target: str, left, right
