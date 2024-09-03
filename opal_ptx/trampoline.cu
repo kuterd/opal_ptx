@@ -86,6 +86,7 @@ public:
             kernel_arg_data.push_back(item.cast<int64_t>());
         }
 
+
         void** kernel_params = new void*[kernel_params_tuple.size() + 1];
         for (size_t i = 0; i < kernel_params_tuple.size(); ++i) {
             kernel_params[i] = reinterpret_cast<void*>(&kernel_arg_data[i]);
@@ -102,8 +103,58 @@ public:
     }
 
 private:
-    CUcontext cuContext;
     CUmodule cuModule;
+};
+
+class TensorMapWrapper {
+public:
+    void encode_tiled(CUtensorMapDataType data_type, uint64_t global_address, pybind11::tuple global_dim, pybind11::tuple global_strides, pybind11::tuple box_dim, pybind11::tuple element_strides, CUtensorMapInterleave interleave, CUtensorMapSwizzle swizzle, CUtensorMapL2promotion promotion, CUtensorMapFloatOOBfill oob_fill) {
+
+        uint32_t tensor_rank = global_dim.size();
+
+        std::vector<uint64_t> global_dim_vector;
+        for (const auto& item : global_dim) {
+            global_dim_vector.push_back(item.cast<uint64_t>());
+        }
+
+        std::vector<uint64_t> global_strides_vector;
+        for (const auto& item : global_strides) {
+            global_strides_vector.push_back(item.cast<uint64_t>());
+        }
+
+        std::vector<uint32_t> box_dim_vector;
+        for (const auto& item : box_dim) {
+            box_dim_vector.push_back(item.cast<uint32_t>());
+        }
+
+        std::vector<uint32_t> element_strides_vector;
+        for (const auto& item : element_strides) {
+            element_strides_vector.push_back(item.cast<uint32_t>());
+        }
+
+        CHECK_CUDA(cuTensorMapEncodeTiled(
+            &tensor_map,
+            data_type,
+            tensor_rank,
+            (void*)global_address,
+            (uint64_t*)global_dim_vector.data(),
+            (uint64_t*)global_strides_vector.data(),
+            (uint32_t*)box_dim_vector.data(),
+            (uint32_t*)element_strides_vector.data(),
+            interleave,
+            swizzle,
+            promotion,
+            oob_fill
+        ));
+
+    }
+
+
+    uint64_t ptr() {
+        return (uint64_t)&tensor_map;
+    }
+
+    CUtensorMap tensor_map;
 };
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -111,4 +162,44 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def(pybind11::init<>())
         .def("load_ptx_code", &CuModuleWrapper::load_ptx_code, "Load PTX code into the CUDA module")
         .def("launch_kernel", &CuModuleWrapper::launch_kernel, "Launch a CUDA kernel with specified parameters");
+
+    pybind11::class_<TensorMapWrapper>(m, "TensorMapWrapper")
+        .def(pybind11::init<>())
+        .def("encode_tiled", &TensorMapWrapper::encode_tiled)
+        .def("ptr", &TensorMapWrapper::ptr);
+
+    py::enum_<CUtensorMapDataType>(m, "CUtensorMapDataType")
+        .value("UINT8", CU_TENSOR_MAP_DATA_TYPE_UINT8)
+        .value("UINT16", CU_TENSOR_MAP_DATA_TYPE_UINT16)
+        .value("UINT32", CU_TENSOR_MAP_DATA_TYPE_UINT32)
+        .value("INT32", CU_TENSOR_MAP_DATA_TYPE_INT32)
+        .value("FLOAT16", CU_TENSOR_MAP_DATA_TYPE_FLOAT16)
+        .value("FLOAT32", CU_TENSOR_MAP_DATA_TYPE_FLOAT32)
+        .value("FLOAT64", CU_TENSOR_MAP_DATA_TYPE_FLOAT64)
+        .value("BFLOAT16", CU_TENSOR_MAP_DATA_TYPE_BFLOAT16)
+        .value("FLOAT32_FTZ", CU_TENSOR_MAP_DATA_TYPE_FLOAT32_FTZ)
+        .value("TFLOAT32", CU_TENSOR_MAP_DATA_TYPE_TFLOAT32)
+        .value("TFLOAT32_FTZ", CU_TENSOR_MAP_DATA_TYPE_TFLOAT32_FTZ)
+        .export_values();
+
+    py::enum_<CUtensorMapFloatOOBfill>(m, "CUtensorMapFloatOOBfill")
+        .value("NONE", CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE)
+        .value("NAN_REQUEST_ZERO_FMA", CU_TENSOR_MAP_FLOAT_OOB_FILL_NAN_REQUEST_ZERO_FMA);
+
+    py::enum_<CUtensorMapInterleave>(m, "CUtensorMapInterleave")
+        .value("NONE", CU_TENSOR_MAP_INTERLEAVE_NONE)
+        .value("16B", CU_TENSOR_MAP_INTERLEAVE_16B)
+        .value("32B", CU_TENSOR_MAP_INTERLEAVE_32B);
+
+    py::enum_<CUtensorMapL2promotion>(m, "CUtensorMapL2promotion")
+        .value("NONE", CU_TENSOR_MAP_L2_PROMOTION_NONE)
+        .value("64B", CU_TENSOR_MAP_L2_PROMOTION_L2_64B)
+        .value("128B", CU_TENSOR_MAP_L2_PROMOTION_L2_128B)
+        .value("256B", CU_TENSOR_MAP_L2_PROMOTION_L2_256B);
+
+    py::enum_<CUtensorMapSwizzle>(m, "CUtensorMapSwizzle")
+        .value("NONE", CU_TENSOR_MAP_SWIZZLE_NONE)
+        .value("32B", CU_TENSOR_MAP_SWIZZLE_32B)
+        .value("64B", CU_TENSOR_MAP_SWIZZLE_64B)
+        .value("128B", CU_TENSOR_MAP_SWIZZLE_128B);
 }
