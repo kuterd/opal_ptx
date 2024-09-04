@@ -826,8 +826,9 @@ class OpalTransformer(ast.NodeTransformer):
                 break
             elif isinstance(_node, ast.Attribute):
                 attr = _node.attr
-                if attr == "_global":
-                    attr = "global"
+                attr = attr.replace("__", "::")
+                if attr[0] == "_":
+                    attr = attr[1:]
                 parts = [attr] + parts
                 _node = _node.value
         ptx_instruction = ".".join(parts) + " "
