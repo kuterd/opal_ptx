@@ -175,7 +175,6 @@ def build_kernel(kernel_func, *args, **kwargs):
 
     debug = False
     if "debug" in kwargs:
-        print("KERNEL BUILDER DEBUG OUTPUT ENABLED")
         debug = kwargs["debug"]
         del kwargs["debug"]
     kernel_builder = KernelBuilder()
@@ -849,8 +848,20 @@ class OpalTransformer(ast.NodeTransformer):
                 instruction_parts.append("}")
             elif isinstance(argument, ast.List):
                 instruction_parts.append("[")
-                assert len(argument.elts) == 1
-                instruction_parts.append(argument.elts[0])
+
+                for i, elt in enumerate(argument.elts):
+                    if i != 0:
+                        instruction_parts.append(" , ")
+                    if isinstance(elt, ast.Set):
+                        # TMA Cordinate
+                        instruction_parts.append("{")
+                        for j, selt in enumerate(elt.elts):
+                            if j != 0:
+                                instruction_parts.append(" , ")
+                            instruction_parts.append(selt)
+                        instruction_parts.append("}")
+                    else:
+                        instruction_parts.append(elt)
                 instruction_parts.append("]")
             else:
                 instruction_parts.append(argument)
