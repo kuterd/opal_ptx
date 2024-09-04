@@ -108,8 +108,18 @@ private:
 
 class TensorMapWrapper {
 public:
-    void encode_tiled(CUtensorMapDataType data_type, uint64_t global_address, pybind11::tuple global_dim, pybind11::tuple global_strides, pybind11::tuple box_dim, pybind11::tuple element_strides, CUtensorMapInterleave interleave, CUtensorMapSwizzle swizzle, CUtensorMapL2promotion promotion, CUtensorMapFloatOOBfill oob_fill) {
-
+    void encode_tiled(
+        CUtensorMapDataType data_type,
+        uint64_t global_address,
+        pybind11::tuple global_dim,
+        pybind11::tuple global_strides,
+        pybind11::tuple box_dim,
+        pybind11::tuple element_strides,
+        CUtensorMapInterleave interleave,
+        CUtensorMapSwizzle swizzle,
+        CUtensorMapL2promotion promotion,
+        CUtensorMapFloatOOBfill oob_fill
+    ) {
         uint32_t tensor_rank = global_dim.size();
 
         std::vector<uint64_t> global_dim_vector;
@@ -146,12 +156,13 @@ public:
             promotion,
             oob_fill
         ));
-
     }
 
-
-    uint64_t ptr() {
-        return (uint64_t)&tensor_map;
+    uint64_t commit_to_gpu() {
+        void *result = nullptr;
+        cudaMalloc(&result, sizeof(CUtensorMap));
+        cudaMemcpy(result, (void*)&tensor_map, sizeof(CUtensorMap), cudaMemcpyHostToDevice);
+        return (uint64_t)result;
     }
 
     CUtensorMap tensor_map;
@@ -166,7 +177,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     pybind11::class_<TensorMapWrapper>(m, "TensorMapWrapper")
         .def(pybind11::init<>())
         .def("encode_tiled", &TensorMapWrapper::encode_tiled)
-        .def("ptr", &TensorMapWrapper::ptr);
+        .def("ptr", &TensorMapWrapper::commit_to_gpu);
 
     py::enum_<CUtensorMapDataType>(m, "CUtensorMapDataType")
         .value("UINT8", CU_TENSOR_MAP_DATA_TYPE_UINT8)
